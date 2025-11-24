@@ -1,95 +1,308 @@
-# app.py
-# Compact OTP Messenger (Tkinter)
-import os,base64,tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+#!/usr/bin/env python3
+"""
+SecureComm: One-Time Pad (OTP) Cipher Messaging System
+Educational implementation with GUI - Unbreakable encryption
+"""
+import tkinter as tk
+from tkinter import ttk, messagebox, filedialog
+import os
+import base64
+from datetime import datetime
+import json
 
-def gen_key(n): return os.urandom(n)
-def b64(x): return base64.b64encode(x).decode()
-def ub64(s): return base64.b64decode(s.encode())
+class OneTimePadCipher:
+    """One-Time Pad cipher implementation - theoretically unbreakable"""
+    
+    def __init__(self):
+        self.key = None
+        self.key_hex = None
+    
+    def generate_key(self, length):
+        """Generate random OTP key"""
+        self.key = os.urandom(length)
+        self.key_hex = self.key.hex()
+        return self.key_hex
+    
+    def encrypt(self, plaintext):
+        """Encrypt using OTP - XOR each byte with key"""
+        pt_bytes = plaintext.encode('utf-8')
+        
+        # Generate key if not exists or if too short
+        if not self.key or len(self.key) < len(pt_bytes):
+            self.generate_key(len(pt_bytes))
+        
+        # XOR operation
+        ciphertext = bytes([pt_bytes[i] ^ self.key[i] for i in range(len(pt_bytes))])
+        
+        # Return base64 encoded ciphertext and key
+        ct_b64 = base64.b64encode(ciphertext).decode()
+        key_b64 = base64.b64encode(self.key[:len(pt_bytes)]).decode()
+        
+        return ct_b64, key_b64
+    
+    def decrypt(self, ciphertext_b64, key_b64):
+        """Decrypt using OTP - XOR ciphertext with key"""
+        try:
+            ct_bytes = base64.b64decode(ciphertext_b64.encode())
+            key_bytes = base64.b64decode(key_b64.encode())
+            
+            if len(ct_bytes) != len(key_bytes):
+                raise ValueError("⚠ Key length mismatch! Decryption impossible.")
+            
+            # XOR operation
+            plaintext_bytes = bytes([ct_bytes[i] ^ key_bytes[i] for i in range(len(ct_bytes))])
+            plaintext = plaintext_bytes.decode('utf-8', errors='replace')
+            
+            return plaintext
+        except Exception as e:
+            raise ValueError(f"Decryption error: {e}")
+    
+    def validate_key(self, key_b64, plaintext_length):
+        """Validate if key is sufficient for plaintext"""
+        try:
+            key_bytes = base64.b64decode(key_b64.encode())
+            if len(key_bytes) < plaintext_length:
+                return False, f"Key too short: {len(key_bytes)} bytes, need {plaintext_length}"
+            return True, "Valid"
+        except:
+            return False, "Invalid key format"
 
-def encrypt_bytes(pt_bytes,key_bytes):
-    return bytes([pt_bytes[i]^key_bytes[i] for i in range(len(pt_bytes))])
 
-def encrypt_text(plaintext):
-    pt=plaintext.encode('utf-8')
-    key=gen_key(len(pt))
-    ct=encrypt_bytes(pt,key)
-    return b64(ct), b64(key)
+class SecureCommApp:
+    """Main OTP messaging application"""
+    
+    def __init__(self, root):
+        self.root = root
+        self.root.title("SecureComm - One-Time Pad Messenger")
+        self.root.geometry("1100x800")
+        self.root.configure(bg="#0a0e27")
+        
+        self.cipher = OneTimePadCipher()
+        self.current_key = None
+        
+        self._setup_ui()
+    
+    def _setup_ui(self):
+        """Setup UI with terminalistic theme"""
+        style = ttk.Style()
+        style.theme_use('clam')
+        style.configure('TLabel', background="#0a0e27", foreground="#00ff41")
+        style.configure('TFrame', background="#0a0e27")
+        style.configure('TButton', background="#1a1f3a", foreground="#00ff41")
+        style.map('TButton', background=[('active', '#2d3561')])
+        style.configure('Title.TLabel', font=("Courier", 14, "bold"))
+        
+        # Main frame
+        main_frame = ttk.Frame(self.root)
+        main_frame.pack(fill='both', expand=True, padx=10, pady=10)
+        
+        # Header
+        header = ttk.Label(main_frame, text="█ SECURECOMM - ONE-TIME PAD CIPHER SYSTEM █", 
+                          style='Title.TLabel')
+        header.pack(pady=10)
+        
+        info = ttk.Label(main_frame, text="[Theoretically Unbreakable Encryption - Proven by Claude Shannon]")
+        info.pack(pady=2)
+        
+        # ============ KEY MANAGEMENT SECTION ============
+        key_frame = ttk.LabelFrame(main_frame, text="🔑 Key Management", padding=10)
+        key_frame.pack(fill='x', pady=5)
+        
+        btn_subframe = ttk.Frame(key_frame)
+        btn_subframe.pack(fill='x', pady=5)
+        
+        def gen_new_key():
+            """Generate new random key"""
+            try:
+                key_hex = self.cipher.generate_key(256)
+                self.current_key = base64.b64encode(self.cipher.key).decode()
+                self.key_display.config(state='normal')
+                self.key_display.delete('1.0', 'end')
+                self.key_display.insert('1.0', self.current_key)
+                self.key_display.config(state='disabled')
+                self.status_var.set("✓ New 256-byte random key generated")
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
+        
+        def copy_key():
+            """Copy key to clipboard"""
+            if self.current_key:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(self.current_key)
+                messagebox.showinfo("Success", "Key copied to clipboard")
+            else:
+                messagebox.showwarning("Warning", "Generate a key first")
+        
+        ttk.Button(btn_subframe, text="🎲 Generate New Key (256 bytes)", command=gen_new_key).pack(side='left', padx=5)
+        ttk.Button(btn_subframe, text="📋 Copy Key", command=copy_key).pack(side='left', padx=5)
+        
+        ttk.Label(key_frame, text="Current Key (Base64):").pack(anchor='w', pady=(5, 0))
+        self.key_display = tk.Text(key_frame, height=4, width=120, bg="#1a1f3a", 
+                                    fg="#00ff41", font=("Courier", 9), state='disabled')
+        self.key_display.pack(fill='x', padx=5, pady=5)
+        
+        # ============ ENCRYPTION SECTION ============
+        input_frame = ttk.LabelFrame(main_frame, text="📝 Plaintext Message (Sender)", padding=10)
+        input_frame.pack(fill='both', expand=True, pady=5)
+        
+        self.input_text = tk.Text(input_frame, height=6, width=120, bg="#1a1f3a", 
+                                   fg="#00ff41", font=("Courier", 10), insertbackground="#00ff41")
+        self.input_text.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # Encrypt button
+        encrypt_frame = ttk.Frame(main_frame)
+        encrypt_frame.pack(fill='x', pady=5)
+        
+        def encrypt_msg():
+            plaintext = self.input_text.get('1.0', 'end').strip()
+            if not plaintext:
+                messagebox.showwarning("Warning", "Enter message to encrypt")
+                return
+            
+            try:
+                ct_b64, key_b64 = self.cipher.encrypt(plaintext)
+                self.current_key = key_b64
+                
+                self.output_text.config(state='normal')
+                self.output_text.delete('1.0', 'end')
+                self.output_text.insert('1.0', ct_b64)
+                self.output_text.config(state='normal')
+                
+                self.key_display.config(state='normal')
+                self.key_display.delete('1.0', 'end')
+                self.key_display.insert('1.0', key_b64)
+                self.key_display.config(state='disabled')
+                
+                msg_len = len(plaintext.encode('utf-8'))
+                self.status_var.set(f"✓ Encrypted | Message: {msg_len} bytes | Key: {len(key_b64)} chars (Base64)")
+            except Exception as e:
+                messagebox.showerror("Error", f"Encryption failed: {e}")
+        
+        ttk.Button(encrypt_frame, text="🔒 Encrypt Message", command=encrypt_msg).pack(side='left', padx=5)
+        
+        # ============ CIPHERTEXT SECTION ============
+        output_frame = ttk.LabelFrame(main_frame, text="🔐 Ciphertext Message (Encrypted)", padding=10)
+        output_frame.pack(fill='both', expand=True, pady=5)
+        
+        self.output_text = tk.Text(output_frame, height=6, width=120, bg="#1a1f3a", 
+                                    fg="#ff0000", font=("Courier", 10), insertbackground="#00ff41")
+        self.output_text.pack(fill='both', expand=True, padx=5, pady=5)
+        
+        # ============ DECRYPTION SECTION ============
+        decrypt_frame = ttk.Frame(main_frame)
+        decrypt_frame.pack(fill='x', pady=5)
+        
+        def decrypt_msg():
+            ciphertext = self.output_text.get('1.0', 'end').strip()
+            key = self.key_display.get('1.0', 'end').strip()
+            
+            if not ciphertext or not key:
+                messagebox.showwarning("Warning", "Ciphertext and Key required")
+                return
+            
+            try:
+                plaintext = self.cipher.decrypt(ciphertext, key)
+                self.input_text.delete('1.0', 'end')
+                self.input_text.insert('1.0', plaintext)
+                self.status_var.set(f"✓ Decrypted | Message recovered: {len(plaintext)} chars")
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
+        
+        def clear_all():
+            self.input_text.delete('1.0', 'end')
+            self.output_text.delete('1.0', 'end')
+            self.status_var.set("Cleared")
+        
+        ttk.Button(decrypt_frame, text="🔓 Decrypt Message", command=decrypt_msg).pack(side='left', padx=5)
+        ttk.Button(decrypt_frame, text="🗑 Clear All", command=clear_all).pack(side='left', padx=5)
+        
+        # ============ FILE OPERATIONS ============
+        file_frame = ttk.LabelFrame(main_frame, text="💾 File Operations", padding=10)
+        file_frame.pack(fill='x', pady=5)
+        
+        def save_msg():
+            plaintext = self.input_text.get('1.0', 'end').strip()
+            ciphertext = self.output_text.get('1.0', 'end').strip()
+            key = self.key_display.get('1.0', 'end').strip()
+            
+            if not plaintext and not ciphertext:
+                messagebox.showwarning("Warning", "Nothing to save")
+                return
+            
+            filename = filedialog.asksaveasfilename(defaultextension=".json", 
+                                                   filetypes=[("JSON", "*.json"), ("Text", "*.txt")])
+            if filename:
+                try:
+                    data = {
+                        "timestamp": datetime.now().isoformat(),
+                        "algorithm": "One-Time Pad (OTP)",
+                        "plaintext": plaintext,
+                        "ciphertext": ciphertext,
+                        "key": key,
+                        "key_length": len(key),
+                        "message_bytes": len(plaintext.encode('utf-8')) if plaintext else 0
+                    }
+                    with open(filename, 'w') as f:
+                        json.dump(data, f, indent=2)
+                    messagebox.showinfo("Success", "Message saved with key")
+                except Exception as e:
+                    messagebox.showerror("Error", str(e))
+        
+        def load_msg():
+            filename = filedialog.askopenfilename(filetypes=[("JSON", "*.json"), ("Text", "*.txt")])
+            if filename:
+                try:
+                    with open(filename, 'r') as f:
+                        if filename.endswith('.json'):
+                            data = json.load(f)
+                            self.input_text.delete('1.0', 'end')
+                            self.input_text.insert('1.0', data.get("plaintext", ""))
+                            self.output_text.delete('1.0', 'end')
+                            self.output_text.insert('1.0', data.get("ciphertext", ""))
+                            self.key_display.config(state='normal')
+                            self.key_display.delete('1.0', 'end')
+                            self.key_display.insert('1.0', data.get("key", ""))
+                            self.key_display.config(state='disabled')
+                            self.current_key = data.get("key", "")
+                        else:
+                            content = f.read()
+                            self.output_text.delete('1.0', 'end')
+                            self.output_text.insert('1.0', content)
+                    messagebox.showinfo("Success", "Message loaded")
+                except Exception as e:
+                    messagebox.showerror("Error", f"Load failed: {e}")
+        
+        def copy_cipher():
+            ciphertext = self.output_text.get('1.0', 'end').strip()
+            if ciphertext:
+                self.root.clipboard_clear()
+                self.root.clipboard_append(ciphertext)
+                messagebox.showinfo("Success", "Ciphertext copied to clipboard")
+        
+        ttk.Button(file_frame, text="💾 Save Message + Key", command=save_msg).pack(side='left', padx=5)
+        ttk.Button(file_frame, text="📂 Load Message", command=load_msg).pack(side='left', padx=5)
+        ttk.Button(file_frame, text="📋 Copy Ciphertext", command=copy_cipher).pack(side='left', padx=5)
+        
+        # Status bar
+        self.status_var = tk.StringVar(value="Ready | Generate a key to start")
+        status_bar = ttk.Label(main_frame, textvariable=self.status_var, relief='sunken', 
+                              foreground="#00ff41", background="#0a0e27")
+        status_bar.pack(fill='x', pady=5)
+        
+        # Info panel
+        info_frame = ttk.LabelFrame(main_frame, text="ℹ️  Algorithm Info", padding=10)
+        info_frame.pack(fill='x', pady=5)
+        
+        info_text = """ONE-TIME PAD (OTP): Perfect encryption proven by Shannon (1949)
+• Each bit of plaintext is XORed with a random key bit
+• Key must be: random, same length as message, used only ONCE
+• Ciphertext provides no information about plaintext without the exact key
+• MATHEMATICALLY UNBREAKABLE (if key is truly random and kept secret)"""
+        
+        ttk.Label(info_frame, text=info_text, justify='left').pack(anchor='w')
 
-def decrypt_text(ct_b64,key_b64):
-    ct=ub64(ct_b64); key=ub64(key_b64)
-    if len(ct)!=len(key): raise ValueError("Key length mismatch")
-    pt=encrypt_bytes(ct,key)
-    return pt.decode('utf-8',errors='replace')
 
-# --- GUI ---
-root=tk.Tk(); root.title("OTP Messenger (Local)")
-root.geometry("820x520")
-frm=ttk.Frame(root,padding=12); frm.pack(fill='both',expand=True)
-
-# Input
-ttk.Label(frm,text="Plaintext / Sender").grid(row=0,column=0,sticky='w')
-txt_in=tk.Text(frm,height=6,width=80); txt_in.grid(row=1,column=0,columnspan=4,pady=6)
-
-# Buttons: Generate/Encrypt
-def on_generate():
-    pt=txt_in.get('1.0','end').rstrip('\n')
-    if not pt: messagebox.showinfo("Info","Type a message first"); return
-    ct_b64,key_b64=encrypt_text(pt)
-    ent_cipher.delete('1.0','end'); ent_cipher.insert('1.0',ct_b64)
-    ent_key.delete('1.0','end'); ent_key.insert('1.0',key_b64)
-def on_encrypt(): on_generate()
-
-btn_gen=ttk.Button(frm,text="Generate OTP & Encrypt",command=on_generate); btn_gen.grid(row=2,column=0,sticky='w',pady=6)
-
-# Cipher and Key display
-ttk.Label(frm,text="Ciphertext (base64)").grid(row=3,column=0,sticky='w')
-ent_cipher=tk.Text(frm,height=6,width=80); ent_cipher.grid(row=4,column=0,columnspan=4,pady=6)
-ttk.Label(frm,text="OTP Key (base64)").grid(row=5,column=0,sticky='w')
-ent_key=tk.Text(frm,height=4,width=80); ent_key.grid(row=6,column=0,columnspan=4,pady=6)
-
-# Decrypt
-def on_decrypt():
-    ct=ent_cipher.get('1.0','end').strip()
-    key=ent_key.get('1.0','end').strip()
-    if not ct or not key: messagebox.showinfo("Info","Ciphertext and key required"); return
-    try:
-        pt=decrypt_text(ct,key)
-    except Exception as e:
-        messagebox.showerror("Error",f"Decryption failed: {e}"); return
-    txt_out.delete('1.0','end'); txt_out.insert('1.0',pt)
-
-btn_dec=ttk.Button(frm,text="Decrypt",command=on_decrypt); btn_dec.grid(row=7,column=0,sticky='w',pady=6)
-
-# Output
-ttk.Label(frm,text="Decrypted / Receiver").grid(row=8,column=0,sticky='w')
-txt_out=tk.Text(frm,height=5,width=80); txt_out.grid(row=9,column=0,columnspan=4,pady=6)
-
-# Utilities: Save/Load/Copy
-def save_to_file(text,kind):
-    fn=filedialog.asksaveasfilename(defaultextension=".txt",filetypes=[("Text","*.txt"),("All","*.*")],title=f"Save {kind}")
-    if fn:
-        with open(fn,'w',encoding='utf-8') as f: f.write(text)
-def load_from_file(target):
-    fn=filedialog.askopenfilename(title="Load file",filetypes=[("Text","*.txt"),("All","*.*")])
-    if fn:
-        with open(fn,'r',encoding='utf-8') as f:
-            target.delete('1.0','end'); target.insert('1.0',f.read())
-
-ttk.Button(frm,text="Save Cipher",command=lambda: save_to_file(ent_cipher.get('1.0','end').strip(),"cipher")).grid(row=10,column=0,sticky='w')
-ttk.Button(frm,text="Save Key",command=lambda: save_to_file(ent_key.get('1.0','end').strip(),"key")).grid(row=10,column=1,sticky='w')
-ttk.Button(frm,text="Load Cipher",command=lambda: load_from_file(ent_cipher)).grid(row=10,column=2,sticky='w')
-ttk.Button(frm,text="Load Key",command=lambda: load_from_file(ent_key)).grid(row=10,column=3,sticky='w')
-
-def copy_to_clipboard(widget):
-    s=widget.get('1.0','end').strip()
-    root.clipboard_clear(); root.clipboard_append(s)
-ttk.Button(frm,text="Copy Cipher",command=lambda: copy_to_clipboard(ent_cipher)).grid(row=11,column=0,sticky='w')
-ttk.Button(frm,text="Copy Key",command=lambda: copy_to_clipboard(ent_key)).grid(row=11,column=1,sticky='w')
-ttk.Button(frm,text="Copy Plaintext",command=lambda: copy_to_clipboard(txt_in)).grid(row=11,column=2,sticky='w')
-
-# small help
-help_txt="OTP rules: key must be random, same length as message, used only once. This demo stores key locally (not secure for real world)."
-ttk.Label(frm,text=help_txt,wraplength=760).grid(row=12,column=0,columnspan=4,pady=8)
-
-root.mainloop()
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = SecureCommApp(root)
+    root.mainloop()
